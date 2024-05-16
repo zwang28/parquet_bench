@@ -1,8 +1,8 @@
-use arrow::array::{ArrayRef, Int32Array};
+use arrow::array::{Array, ArrayRef, Int32Array};
 use arrow::record_batch::RecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-use parquet::arrow::ArrowWriter;
-use parquet::basic::Compression;
+use parquet::arrow::{ArrowWriter, ProjectionMask};
+use parquet::basic::{Compression, ZstdLevel};
 use parquet::file::properties::WriterProperties;
 use rand::Rng;
 use std::fs::File;
@@ -11,7 +11,7 @@ use std::sync::Arc;
 pub fn write(path: &str, row_num: usize, col_num: usize) {
     let file = File::create(path).unwrap();
     let props = WriterProperties::builder()
-        .set_compression(Compression::LZ4)
+        .set_compression(Compression::ZSTD(ZstdLevel::try_new(4).unwrap()))
         .build();
 
     let empty_data = (0..col_num)
@@ -43,14 +43,35 @@ pub fn write(path: &str, row_num: usize, col_num: usize) {
     writer.close().unwrap();
 }
 
-pub fn read(path: &str) {
+pub fn read(path: &str, col_num: usize) {
     let file = File::open(path).unwrap();
     let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
-    println!("Converted arrow schema is: {}", builder.schema());
+    let schema = builder.parquet_schema();
+    println!("{}/{}", col_num, schema.num_columns());
+    let mask = ProjectionMask::leaves(schema, 0..col_num);
+    let mut reader = builder
+        .with_projection(mask)
+        .build()
+        .unwrap();
 
-    let mut reader = builder.build().unwrap();
-
-    let record_batch = reader.next().unwrap().unwrap();
-
-    println!("Read {} records.", record_batch.num_rows());
+    let mut num_rows = 0;
+    let mut num_batch = 0;
+    let mut sum: f64 = 0.0;
+    while let Some(record_batch) = reader.next() {
+        let record_batch = record_batch.unwrap();
+        for c_id in 0..record_batch.num_columns() {
+            let c = record_batch
+                .column(c_id)
+                .as_any()
+                .downcast_ref::<arrow::array::Int32Array>()
+                .unwrap();
+            for r_id in 0..record_batch.num_rows() {
+                sum += c.value(r_id) as f64;
+            }
+        }
+        num_rows += record_batch.num_rows();
+        num_batch += 1;
+    }
+    println!("Read {} records in {} batch.", num_rows, num_batch);
+    println!("Sum {}", sum);
 }
