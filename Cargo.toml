@@ -5,9 +5,12 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
-arrow = "51"
-parquet = "51"
+arrow = { version = "51" }
+parquet = { version = "51", features = ["async", "object_store"] }
 rand = "0.8"
+tokio = { version = "1.37", features = ["full"] }
+object_store = { version = "0.9.1", features = ["aws"] }
+futures = { version = "0.3", features = ["std"] }
 
 [[bin]]
 name = "write"

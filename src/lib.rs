@@ -1,12 +1,16 @@
 use arrow::array::{Array, ArrayRef, Int32Array};
 use arrow::record_batch::RecordBatch;
+use object_store::path::Path;
+use object_store::ObjectStore;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
-use parquet::arrow::{ArrowWriter, ProjectionMask};
+use parquet::arrow::async_reader::ParquetObjectReader;
+use parquet::arrow::{ArrowWriter, ParquetRecordBatchStreamBuilder, ProjectionMask};
 use parquet::basic::{Compression, ZstdLevel};
 use parquet::file::properties::WriterProperties;
 use rand::Rng;
 use std::fs::File;
 use std::sync::Arc;
+use futures::StreamExt;
 
 pub fn write(path: &str, row_num: usize, col_num: usize) {
     let file = File::create(path).unwrap();
@@ -49,15 +53,52 @@ pub fn read(path: &str, col_num: usize) {
     let schema = builder.parquet_schema();
     println!("{}/{}", col_num, schema.num_columns());
     let mask = ProjectionMask::leaves(schema, 0..col_num);
-    let mut reader = builder
-        .with_projection(mask)
-        .build()
-        .unwrap();
+    let mut reader = builder.with_projection(mask).build().unwrap();
 
     let mut num_rows = 0;
     let mut num_batch = 0;
     let mut sum: f64 = 0.0;
     while let Some(record_batch) = reader.next() {
+        let record_batch = record_batch.unwrap();
+        for c_id in 0..record_batch.num_columns() {
+            let c = record_batch
+                .column(c_id)
+                .as_any()
+                .downcast_ref::<arrow::array::Int32Array>()
+                .unwrap();
+            for r_id in 0..record_batch.num_rows() {
+                sum += c.value(r_id) as f64;
+            }
+        }
+        num_rows += record_batch.num_rows();
+        num_batch += 1;
+    }
+    println!("Read {} records in {} batch.", num_rows, num_batch);
+    println!("Sum {}", sum);
+}
+
+pub async fn read_object_store(path: &str, col_num: usize) {
+    let storage_container = Arc::new(
+        object_store::aws::AmazonS3Builder::from_env()
+            .with_bucket_name(std::env::var("AWS_S3_BUCKET").unwrap())
+            .build()
+            .unwrap(),
+    );
+    let location = Path::from(path);
+    let meta = storage_container.head(&location).await.unwrap();
+    println!("Found Blob with {}B at {}", meta.size, meta.location);
+    // Show Parquet metadata
+    let reader = ParquetObjectReader::new(storage_container, meta);
+    let builder = ParquetRecordBatchStreamBuilder::new(reader).await.unwrap();
+    let schema = builder.parquet_schema();
+    println!("{}/{}", col_num, schema.num_columns());
+    let mask = ProjectionMask::leaves(schema, 0..col_num);
+    let mut reader = builder.with_projection(mask).build().unwrap();
+
+    let mut num_rows = 0;
+    let mut num_batch = 0;
+    let mut sum: f64 = 0.0;
+    while let Some(record_batch) = reader.next().await {
         let record_batch = record_batch.unwrap();
         for c_id in 0..record_batch.num_columns() {
             let c = record_batch
