@@ -1,5 +1,6 @@
 use arrow::array::{Array, ArrayRef, Int32Array};
 use arrow::record_batch::RecordBatch;
+use futures::StreamExt;
 use object_store::path::Path;
 use object_store::ObjectStore;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -10,11 +11,11 @@ use parquet::file::properties::WriterProperties;
 use rand::Rng;
 use std::fs::File;
 use std::sync::Arc;
-use futures::StreamExt;
 
-pub fn write(path: &str, row_num: usize, col_num: usize) {
+pub fn write(path: &str, row_num: usize, col_num: usize, set_max_row_group_size: usize) {
     let file = File::create(path).unwrap();
     let props = WriterProperties::builder()
+        .set_max_row_group_size(set_max_row_group_size)
         .set_compression(Compression::ZSTD(ZstdLevel::try_new(4).unwrap()))
         .build();
 
