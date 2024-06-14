@@ -48,6 +48,15 @@ pub fn write(path: &str, row_num: usize, col_num: usize, set_max_row_group_size:
     writer.close().unwrap();
 }
 
+pub fn read_metadata(path: &str) {
+    use parquet::file::reader::{FileReader, SerializedFileReader};
+    let file = File::open(path).unwrap();
+    let reader = SerializedFileReader::new(file).unwrap();
+    let metadata = reader.metadata();
+    let num_row_groups = metadata.num_row_groups();
+    println!("row group num {num_row_groups}");
+}
+
 pub fn read(path: &str, col_num: usize) {
     let file = File::open(path).unwrap();
     let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
