@@ -23,3 +23,7 @@ path = "src/bin/read.rs"
 [[bin]]
 name = "read_metadata"
 path = "src/bin/read_metadata.rs"
+
+[[bin]]
+name = "simple_read"
+path = "src/bin/simple_read.rs"
